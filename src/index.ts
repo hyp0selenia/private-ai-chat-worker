@@ -92,8 +92,12 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .stats{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;color:var(--muted);margin-top:2px}
 .stats b{color:var(--text);font-weight:600}
 .messages{flex:1;overflow:auto;padding:20px max(12px,calc((100% - 920px)/2))}
-.msg{margin:0 auto 20px;max-width:920px}
-.role{font-size:12px;color:var(--muted);margin-bottom:5px}
+.msg{margin:0 auto 20px;max-width:920px;position:relative}
+.role{font-size:12px;color:var(--muted);margin-bottom:5px;display:flex;align-items:center;gap:8px}
+.role .msg-actions{display:none;gap:4px;margin-left:auto}
+.msg:hover .msg-actions,.msg.editing .msg-actions{display:flex}
+.msg-actions button{border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:6px;padding:2px 8px;font-size:11px}
+.msg-actions button:hover{color:var(--text);border-color:#3a4654}
 .bubble{white-space:pre-wrap;overflow-wrap:anywhere}
 .bubble code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0d10;border:1px solid var(--line);border-radius:5px;padding:2px 4px}
 .bubble pre{white-space:pre;overflow:auto;background:#080a0d;border:1px solid var(--line);padding:12px;border-radius:8px}.bubble p{margin:.6em 0}
@@ -114,6 +118,7 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .model-select{align-self:flex-end;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 8px;max-width:72px;width:72px;height:40px;flex-shrink:0;font-size:13px}
 .send{align-self:flex-end;background:#eef2f7;color:#111;border:0;border-radius:8px;padding:9px 14px;height:40px;flex-shrink:0;min-width:64px}
 .send:disabled{opacity:.5;cursor:not-allowed}
+.send.stop{background:#ff6b6b;color:#fff}
 .login{min-height:100dvh;display:grid;place-items:center;padding:20px}
 .card{width:min(380px,100%);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
 .card h1{margin-top:0}.field{display:block;margin:14px 0}
@@ -194,6 +199,8 @@ const sidebar=$('#sidebar'), scrim=$('#scrim');
 const MODEL_CTX={"deepseek-ai/DeepSeek-V3.2":128000,"deepseek-ai/DeepSeek-R1":163840};
 let currentId=null, currentModel='deepseek-ai/DeepSeek-V3.2', csrfToken='';
 let sessionMeta={totalThinkingMs:0,totalPromptTokens:0,totalCompletionTokens:0,totalTokens:0,ctxTokens:0};
+let abortCtrl=null;
+let isStreaming=false;
 
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]||c));}
 function md(s){
@@ -225,6 +232,21 @@ function updateStats(){
   fill.style.width=pct+'%';
   fill.classList.toggle('warn',pct>=75);
 }
+function setStreaming(on){
+  isStreaming=!!on;
+  if(on){
+    sendBtn.disabled=false;
+    sendBtn.textContent='停止';
+    sendBtn.classList.add('stop');
+    sendBtn.type='button';
+  }else{
+    sendBtn.disabled=false;
+    sendBtn.textContent='发送';
+    sendBtn.classList.remove('stop');
+    sendBtn.type='submit';
+    abortCtrl=null;
+  }
+}
 function openSidebar(){sidebar.classList.remove('collapsed');scrim.classList.add('show');}
 function closeSidebar(){sidebar.classList.add('collapsed');scrim.classList.remove('show');}
 function toggleSidebar(){
@@ -238,6 +260,7 @@ scrim.onclick=closeSidebar;
 function renderMsg(role,content,meta){
   meta=meta||{};
   const d=document.createElement('div');d.className='msg';
+  d.dataset.role=role;
   let reasoningHtml='';
   if(meta.reasoning){
     reasoningHtml='<details class="reasoning"><summary>思维链（DeepSeek-R1）</summary><div class="reasoning-body">'+esc(meta.reasoning)+'</div></details>';
@@ -247,10 +270,21 @@ function renderMsg(role,content,meta){
   if(meta.totalTokens!=null)bits.push('<span>Token '+fmtTok(meta.totalTokens)+'（↓ '+fmtTok(meta.promptTokens)+' / ↑ '+fmtTok(meta.completionTokens)+'）</span>');
   else if(meta.promptTokens!=null||meta.completionTokens!=null)bits.push('<span>Token ↓ '+fmtTok(meta.promptTokens)+' / ↑ '+fmtTok(meta.completionTokens)+'</span>');
   const metaHtml=bits.length?'<div class="msg-meta">'+bits.join('')+'</div>':'';
-  d.innerHTML='<div class="role">'+(role==='user'?'You':'Assistant')+'</div>'+reasoningHtml+'<div class="bubble"></div>'+metaHtml;
+  const actions=role==='user'
+    ?'<div class="msg-actions"><button type="button" class="btn-edit" title="编辑并重发">编辑</button><button type="button" class="btn-resend" title="重新发送">重发</button></div>'
+    :'';
+  d.innerHTML='<div class="role"><span>'+(role==='user'?'You':'Assistant')+'</span>'+actions+'</div>'+reasoningHtml+'<div class="bubble"></div>'+metaHtml;
   const bubble=d.querySelector('.bubble');
   if(role==='assistant')bubble.innerHTML=md(content||'');
   else bubble.innerHTML=esc(content||'').replace(/\\n/g,'<br>');
+  if(role==='user'){
+    const raw=content||'';
+    d.dataset.raw=raw;
+    const editBtn=d.querySelector('.btn-edit');
+    const resendBtn=d.querySelector('.btn-resend');
+    if(editBtn)editBtn.onclick=e=>{e.stopPropagation();startEditUser(d);};
+    if(resendBtn)resendBtn.onclick=e=>{e.stopPropagation();resendFromUser(d);};
+  }
   messagesEl.appendChild(d);
   messagesEl.scrollTop=messagesEl.scrollHeight;
   let userClosedReasoning=false;
@@ -276,7 +310,6 @@ function renderMsg(role,content,meta){
       details.addEventListener('toggle',()=>{userClosedReasoning=!details.open;});
       if(thinking){details.open=true;userClosedReasoning=false;}
     }
-    // 思考过程中允许用户手动关闭；仅在用户未主动关闭时保持展开
     if(thinking && !userClosedReasoning)details.open=true;
     if(!thinking)details.open=!!details.open;
     details.querySelector('.reasoning-body').textContent=text||'';
@@ -285,12 +318,68 @@ function renderMsg(role,content,meta){
   }};
 }
 
+function startEditUser(msgEl){
+  if(isStreaming)return;
+  const raw=msgEl.dataset.raw||'';
+  msgEl.classList.add('editing');
+  const bubble=msgEl.querySelector('.bubble');
+  bubble.innerHTML='';
+  const ta=document.createElement('textarea');
+  ta.value=raw;
+  ta.style.cssText='width:100%;min-height:80px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;color:inherit';
+  const bar=document.createElement('div');
+  bar.style.cssText='display:flex;gap:8px;margin-top:8px';
+  const save=document.createElement('button');
+  save.type='button';save.textContent='保存并重发';
+  save.style.cssText='background:#eef2f7;color:#111;border:0;border-radius:8px;padding:6px 12px';
+  const cancel=document.createElement('button');
+  cancel.type='button';cancel.textContent='取消';
+  cancel.style.cssText='background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;color:var(--muted)';
+  bar.appendChild(save);bar.appendChild(cancel);
+  bubble.appendChild(ta);bubble.appendChild(bar);
+  ta.focus();
+  cancel.onclick=()=>{
+    msgEl.classList.remove('editing');
+    bubble.innerHTML=esc(raw).replace(/\\n/g,'<br>');
+  };
+  save.onclick=async()=>{
+    const text=ta.value.trim();
+    if(!text)return;
+    msgEl.classList.remove('editing');
+    await truncateAfterAndResend(msgEl,text);
+  };
+}
+
+async function resendFromUser(msgEl){
+  if(isStreaming)return;
+  const raw=msgEl.dataset.raw||'';
+  if(!raw.trim())return;
+  await truncateAfterAndResend(msgEl,raw);
+}
+
+async function truncateAfterAndResend(msgEl,newText){
+  if(isStreaming)return;
+  // 删除该用户消息之后的所有 DOM 消息
+  let next=msgEl.nextElementSibling;
+  while(next){
+    const n=next.nextElementSibling;
+    next.remove();
+    next=n;
+  }
+  // 更新当前用户气泡
+  msgEl.dataset.raw=newText;
+  const bubble=msgEl.querySelector('.bubble');
+  bubble.innerHTML=esc(newText).replace(/\\n/g,'<br>');
+  // 调后端截断并重发
+  await sendMessage(newText,{editFrom:true,truncateAfterUser:true});
+}
+
 async function initSecurity(){
   const r=await fetch('/api/security');
   if(r.ok){const j=await r.json();csrfToken=j.csrf;}
 }
-async function postJSON(url,body){
-  return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body)});
+async function postJSON(url,body,signal){
+  return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body),signal});
 }
 async function deleteReq(url){
   return fetch(url,{method:'DELETE',headers:{'X-CSRF-Token':csrfToken}});
@@ -315,6 +404,7 @@ async function loadChats(){
   });
 }
 async function openChat(id){
+  if(isStreaming && abortCtrl){try{abortCtrl.abort();}catch{}}
   const r=await fetch('/api/chats/'+encodeURIComponent(id));
   if(!r.ok)return;
   const c=await r.json();
@@ -350,6 +440,7 @@ async function openChat(id){
   loadChats();
 }
 function newChat(){
+  if(isStreaming && abortCtrl){try{abortCtrl.abort();}catch{}}
   currentId=null;
   $('#title').textContent='New Chat';
   messagesEl.innerHTML='<div class="msg"><div class="role">Assistant</div><div class="bubble">你好，有什么可以帮你的？</div></div>';
@@ -370,21 +461,24 @@ $('#logout').onclick=async()=>{
   location='/login';
 };
 
-$('#form').onsubmit=async e=>{
-  e.preventDefault();
-  const text=input.value.trim();
-  if(!text||sendBtn.disabled)return;
-  input.value='';
-  sendBtn.disabled=true;
+async function sendMessage(text,opts){
+  opts=opts||{};
+  if(!text||isStreaming)return;
   currentModel=$('#model').value||currentModel;
-  renderMsg('user',text);
+  if(!opts.editFrom){
+    renderMsg('user',text);
+  }
   const ui=renderMsg('assistant','');
   const t0=performance.now();
   let reasoning='';
   let content='';
   let gotDone=false;
+  abortCtrl=new AbortController();
+  setStreaming(true);
   try{
-    const res=await postJSON('/api/chat',{chatId:currentId,model:currentModel,message:text});
+    const body={chatId:currentId,model:currentModel,message:text};
+    if(opts.truncateAfterUser)body.truncateAfterUser=true;
+    const res=await postJSON('/api/chat',body,abortCtrl.signal);
     if(!res.ok){
       ui.bubble.textContent=await res.text();
       return;
@@ -441,7 +535,6 @@ $('#form').onsubmit=async e=>{
         }catch{}
       }
     }
-    // 处理残留缓冲
     if(buf.trim()){
       const line=buf.trim();
       if(line.startsWith('data:')){
@@ -473,13 +566,39 @@ $('#form').onsubmit=async e=>{
     if(reasoning)ui.setReasoning(reasoning,false);
     try{await loadChats();}catch{}
   }catch(err){
-    ui.bubble.textContent='请求失败：'+(err&&err.message?err.message:String(err));
+    if(err&&err.name==='AbortError'){
+      if(!content)ui.bubble.textContent='（已打断）';
+      else ui.bubble.innerHTML=md(content)+(content?'':'');
+      if(reasoning)ui.setReasoning(reasoning,false);
+      ui.setMeta({thinkingMs:Math.round(performance.now()-t0)});
+    }else{
+      ui.bubble.textContent='请求失败：'+(err&&err.message?err.message:String(err));
+    }
   }finally{
-    sendBtn.disabled=false;
+    setStreaming(false);
     try{input.focus();}catch{}
   }
+}
+
+$('#form').onsubmit=async e=>{
+  e.preventDefault();
+  if(isStreaming){
+    if(abortCtrl){try{abortCtrl.abort();}catch{}}
+    return;
+  }
+  const text=input.value.trim();
+  if(!text)return;
+  input.value='';
+  await sendMessage(text);
 };
-input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#form').requestSubmit();}};
+sendBtn.addEventListener('click',e=>{
+  if(isStreaming){
+    e.preventDefault();
+    e.stopPropagation();
+    if(abortCtrl){try{abortCtrl.abort();}catch{}}
+  }
+});
+input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!isStreaming)$('#form').requestSubmit();}};
 (async()=>{await initSecurity();loadChats();updateStats();})();
 </script>`;
   return page("Chat1017", body, script);
@@ -552,7 +671,6 @@ async function generateTitle(env: Env, messages: ChatMessage[]) {
     );
     const j: any = await r.json();
     let title = String(j.choices?.[0]?.message?.content || "").trim();
-    // 去掉思维标签、引号、多余空白
     title = title
       .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .replace(/^["'「『]|["'」』]$/g, "")
@@ -611,7 +729,6 @@ async function compressMessages(env: Env, messages: ChatMessage[]): Promise<Chat
 function isValidChatId(id: string): boolean {
   if (!id || typeof id !== "string") return false;
   const s = id.trim();
-  // UUID 或自定义 id，允许大小写与常见字符
   return /^[a-zA-Z0-9_-]{8,80}$/.test(s) || /^[a-fA-F0-9-]{10,80}$/.test(s);
 }
 
@@ -779,12 +896,13 @@ app.post("/api/chat", async c => {
   if (!(await sessionUser(c))) return c.json({ error: "Unauthorized" }, 401);
   if (!(await checkCsrf(c))) return c.json({ error: "CSRF validation failed" }, 403);
 
-  const b = await c.req.json<{ chatId?: string; model?: string; message?: string }>();
+  const b = await c.req.json<{ chatId?: string; model?: string; message?: string; truncateAfterUser?: boolean }>();
   const message = String(b.message || "").trim();
   if (!message || message.length > MAX_MESSAGE) return c.text("Invalid message", 400);
   const model = MODELS.includes(b.model as any) ? (b.model as string) : MODELS[0];
   const rawChatId = b.chatId != null ? String(b.chatId).trim() : "";
   const id = isValidChatId(rawChatId) ? rawChatId : crypto.randomUUID();
+  const truncateAfterUser = !!b.truncateAfterUser;
 
   let chat = await loadChat(c.env, id);
   if (!chat) {
@@ -801,13 +919,28 @@ app.post("/api/chat", async c => {
       totalTokens: 0,
     };
   } else {
-    // 确保旧会话也有真实 system prompt
     const sysIdx = chat.messages.findIndex(m => m.role === "system" && !m.content.startsWith("【历史对话摘要】"));
     if (sysIdx >= 0) chat.messages[sysIdx].content = SYSTEM_PROMPT;
     else chat.messages.unshift({ role: "system", content: SYSTEM_PROMPT });
   }
   chat.model = model;
-  chat.messages.push({ role: "user", content: message });
+
+  if (truncateAfterUser) {
+    // 编辑重发：找到最后一条 user（或匹配内容的最后一条），截断其后所有消息，替换该 user 内容
+    let lastUserIdx = -1;
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      if (chat.messages[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx >= 0) {
+      chat.messages = chat.messages.slice(0, lastUserIdx);
+    }
+    chat.messages.push({ role: "user", content: message });
+  } else {
+    chat.messages.push({ role: "user", content: message });
+  }
 
   let est = messagesTokenEstimate(chat.messages);
   const nonSystemCount = chat.messages.filter(m => m.role !== "system").length;
@@ -885,19 +1018,37 @@ app.post("/api/chat", async c => {
     chat!.totalCompletionTokens = (chat!.totalCompletionTokens || 0) + completionTokens;
     chat!.totalTokens = (chat!.totalTokens || 0) + totalTokens;
 
+    // 关键修复：先用 fallback 标题落盘，保证 assistant 一定写入 R2
+    // 再异步生成正式标题并二次更新（不阻塞流结束）
     const needTitle = !chat!.title || chat!.title === "New Chat" || chat!.title === "新对话";
     if (needTitle) {
-      try {
-        chat!.title = await generateTitle(c.env, chat!.messages);
-      } catch {
-        chat!.title = message.slice(0, 16) || "新对话";
-      }
+      chat!.title = message.slice(0, 16) || "新对话";
     }
 
     try {
       await persistChat(c.env, chat!);
     } catch (e) {
       console.error("persist assistant failed", e);
+    }
+
+    // 异步生成标题（不阻塞 done 事件；失败也不影响已保存的 assistant）
+    if (needTitle) {
+      // 在 waitUntil 不可用时尽量在当前请求内快速尝试，但有超时保护
+      try {
+        const titlePromise = generateTitle(c.env, chat!.messages);
+        const timeout = new Promise<string>(resolve => setTimeout(() => resolve(chat!.title), 4000));
+        const title = await Promise.race([titlePromise, timeout]);
+        if (title && title !== chat!.title) {
+          chat!.title = title;
+          try {
+            await persistChat(c.env, chat!);
+          } catch (e) {
+            console.error("persist title failed", e);
+          }
+        }
+      } catch (e) {
+        console.error("async title failed", e);
+      }
     }
 
     const ctxTokens = messagesTokenEstimate(chat!.messages);
@@ -954,7 +1105,6 @@ app.post("/api/chat", async c => {
                 assistant += dc;
                 send({ delta: dc, chatId: id });
               }
-              // 部分接口在结束 chunk 给出完整 message
               const fullMsg = choice.message;
               if (fullMsg) {
                 if (fullMsg.content && !assistant) assistant = String(fullMsg.content);
