@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "private-ai-chat-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-18",
+  "kv_namespaces": [
+    {
+      "binding": "CHAT_KV"
+    }
+  ]
+}
