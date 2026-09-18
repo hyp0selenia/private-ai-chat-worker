@@ -6,8 +6,14 @@
 - 账号密码与 API Key 全部通过 Worker Secrets（环境变量）设置，不会写进代码或仓库
 - Secrets 只需设置一次，后续每次构建/部署自动保留，无需重复输入
 - 多轮对话、Markdown、代码高亮、Streaming
+- **侧边栏可收起/展开**
+- **每句思考时间 + 会话累计思考时间**
+- **每句 Token 消耗（prompt / completion / total）+ 会话累计**
+- **上下文占用进度条与估算**
+- **上下文自动压缩**（超过软上限时用小模型摘要历史）
+- **DeepSeek-R1 思维链（reasoning_content）可展开查看**
 - 聊天历史、删除单条、删除全部
-- KV 保存聊天记录，7 天自动过期
+- **KV 保存聊天记录**（默认约 30 天过期；用户消息先落盘，流结束后再保存完整回复，降低丢失风险）
 - 自动网页搜索（DuckDuckGo HTML / Lite 免费搜索，无需 API Key）
 - Cloudflare GitHub 集成可自动部署
 
@@ -34,6 +40,8 @@ npx wrangler kv namespace create CHAT_KV
   { "binding": "CHAT_KV", "id": "YOUR_KV_ID" }
 ]
 ```
+
+> 聊天记录保存在 KV。若你希望更长保留或大体积历史，可自行扩展为 R2（当前版本已强化 KV 写入时机与 TTL）。
 
 ### 2.2 设置 Secrets（只需一次，之后构建会自动保留）
 
@@ -69,11 +77,11 @@ Secrets 保存在 Cloudflare 侧，**不会进入 Git 仓库**，后续每次部
 ```bash
 npm install
 # 创建本地密钥文件（不会提交到 Git）
-cat > .dev.vars << 'EOF'
+cat > .dev.vars << 'EOFDEV'
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=你的本地密码
 SILICONFLOW_API_KEY=sk-xxxxxxxx
-EOF
+EOFDEV
 npm run dev
 ```
 
@@ -85,7 +93,7 @@ npm run dev
 npm run deploy
 ```
 
-部署前请确保已通过 `wrangler secret put` 或 Dashboard 设置好三个 Secret。
+部署前请确保已通过 `wrangler secret put` 或 Dashboard 设置好三个 Secret，且 `wrangler.jsonc` 中的 KV id 正确。
 
 ## 6. GitHub 自动部署
 
@@ -102,14 +110,32 @@ Workers & Pages → Create application → Import a repository
 聊天：
 
 - `deepseek-ai/DeepSeek-V3.2`
-- `deepseek-ai/DeepSeek-R1`
+- `deepseek-ai/DeepSeek-R1`（支持思维链 reasoning_content）
 
-话题命名：
+话题命名 / 上下文压缩：
 
 - `Qwen/Qwen3.5-9B`
 
 搜索词构建：
 
-- `Qwen3.5-35B-A3B`
+- `Qwen/Qwen3.5-35B-A3B`
 
 具体模型可用性以 SiliconFlow 当前模型列表为准。
+
+## 8. 新功能说明
+
+| 功能 | 说明 |
+|------|------|
+| 侧边栏收起 | 顶栏 ☰ 按钮切换；移动端展开为浮层 |
+| 思考时间 | 每条 assistant 消息显示本轮耗时；顶栏显示本轮与会话累计 |
+| Token | 优先使用上游 `usage`；无则粗估。显示 in/out/total |
+| 上下文占用 | 顶栏数字 + 输入区上方进度条（≥75% 变黄） |
+| 自动压缩 | 消息数或估算 token 超软上限时，用小模型摘要旧轮次并保留最近对话 |
+| R1 思维链 | 流式展示 reasoning；可折叠查看完整思维链 |
+| 历史保存 | 用户消息先写入 KV，流结束后再写入完整 assistant（含 reasoning/token/时间），减少中断丢记录 |
+
+若部署后仍看不到历史，请检查：
+
+1. Dashboard 中该 Worker 是否已绑定正确的 `CHAT_KV`
+2. Secrets 是否齐全
+3. 浏览器是否登录成功（`/api/chats` 返回 401 表示会话无效）
