@@ -144,7 +144,7 @@ function loginPage(error = "") {
   return page(
     "Login",
     `<div class="login"><form class="card" method="post" action="/login">
-<h1>Chat1017</h1><p style="color:var(--muted)">Admin sign in</p>
+<h1>Chat1017</h1><p style="color:var(--muted)">user sign in</p>
 ${error ? `<div class="error">${esc(error)}</div>` : ""}
 <label class="field">Username<input name="username" autocomplete="username" maxlength="128" required></label>
 <label class="field">Password<input type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
