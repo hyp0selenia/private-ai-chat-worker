@@ -117,13 +117,13 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer;tr
 .ctxbar{max-width:920px;margin:0 auto 10px;height:4px;background:#1a222c;border-radius:99px;overflow:hidden}
 .ctxfill{height:100%;background:linear-gradient(90deg,var(--ok),var(--accent));transition:width .3s ease;width:0%;border-radius:99px}
 .ctxfill.warn{background:linear-gradient(90deg,var(--warn),var(--danger))}
-.form{max-width:920px;margin:auto;display:flex;gap:10px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px 12px;box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .15s}
+.form{max-width:920px;margin:auto;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;gap:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .15s;align-items:start}
 .form:focus-within{border-color:rgba(126,182,255,.45);box-shadow:var(--shadow),0 0 0 3px rgba(126,182,255,.12)}
-.form textarea{flex:1;resize:none;background:transparent;border:0;outline:0;min-height:44px;max-height:180px;padding:8px 4px;text-align:center;line-height:1.5}
-.form textarea::placeholder{color:var(--muted);opacity:.75}
-.model-select{align-self:flex-end;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 8px;max-width:76px;width:76px;height:42px;flex-shrink:0;font-size:13px;appearance:none;text-align:center}
+.form textarea{grid-column:1;grid-row:1/3;resize:none;background:transparent;border:0;outline:0;min-height:72px;max-height:180px;padding:4px 6px;text-align:left;line-height:1.5;align-self:stretch}
+.form textarea::placeholder{color:var(--muted);opacity:.75;text-align:left}
+.model-select{grid-column:2;grid-row:1;justify-self:end;align-self:start;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 8px;max-width:76px;width:76px;height:36px;font-size:13px;appearance:none;text-align:center}
 .model-select:hover{border-color:#3d4a5a}
-.send{align-self:flex-end;background:linear-gradient(135deg,#e8eef6,#d0d8e4);color:#0d1117;border:0;border-radius:10px;padding:9px 16px;height:42px;flex-shrink:0;min-width:68px;font-weight:600;letter-spacing:.01em;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.send{grid-column:2;grid-row:2;justify-self:end;align-self:end;background:linear-gradient(135deg,#e8eef6,#d0d8e4);color:#0d1117;border:0;border-radius:10px;padding:8px 16px;height:38px;min-width:68px;font-weight:600;letter-spacing:.01em;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .send:hover{background:linear-gradient(135deg,#f0f4fa,#dce4f0);transform:translateY(-1px)}
 .send:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .send.stop{background:linear-gradient(135deg,#f87171,#ef4444);color:#fff}
@@ -193,11 +193,11 @@ function appPage() {
   <div class="composer">
     <div class="ctxbar" title="上下文占用"><div class="ctxfill" id="ctxfill"></div></div>
     <form class="form" id="form">
+      <textarea id="input" maxlength="${MAX_MESSAGE}" placeholder="请输入文本"></textarea>
       <select id="model" class="model-select" title="模型">
         <option value="deepseek-ai/DeepSeek-V3.2">快速</option>
         <option value="deepseek-ai/DeepSeek-R1">推理</option>
       </select>
-      <textarea id="input" maxlength="${MAX_MESSAGE}" placeholder="请输入文本"></textarea>
       <button class="send" id="sendBtn" type="submit">发送</button>
     </form>
   </div>
@@ -213,6 +213,10 @@ let currentId=null, currentModel='deepseek-ai/DeepSeek-V3.2', csrfToken='';
 let sessionMeta={totalThinkingMs:0,totalPromptTokens:0,totalCompletionTokens:0,totalTokens:0,ctxTokens:0};
 let abortCtrl=null;
 let isStreaming=false;
+let userScrolledUp=false;
+function nearBottom(el,threshold){threshold=threshold||100;return el.scrollHeight-el.scrollTop-el.clientHeight<=threshold;}
+function smartScroll(){if(!userScrolledUp)messagesEl.scrollTop=messagesEl.scrollHeight;}
+messagesEl.addEventListener('scroll',()=>{userScrolledUp=!nearBottom(messagesEl,120);},{passive:true});
 
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]||c));}
 function md(s){
@@ -298,7 +302,8 @@ function renderMsg(role,content,meta){
     if(resendBtn)resendBtn.onclick=e=>{e.stopPropagation();resendFromUser(d);};
   }
   messagesEl.appendChild(d);
-  messagesEl.scrollTop=messagesEl.scrollHeight;
+  userScrolledUp=false;
+  smartScroll();
   let userClosedReasoning=false;
   const details0=d.querySelector('.reasoning');
   if(details0){
@@ -477,6 +482,7 @@ async function sendMessage(text,opts){
   opts=opts||{};
   if(!text||isStreaming)return;
   currentModel=$('#model').value||currentModel;
+  userScrolledUp=false;
   if(!opts.editFrom){
     renderMsg('user',text);
   }
@@ -519,12 +525,12 @@ async function sendMessage(text,opts){
           if(j.reasoning_delta){
             reasoning+=j.reasoning_delta;
             ui.setReasoning(reasoning,true);
-            messagesEl.scrollTop=messagesEl.scrollHeight;
+            smartScroll();
           }
           if(j.delta){
             content+=j.delta;
             ui.bubble.textContent=content;
-            messagesEl.scrollTop=messagesEl.scrollHeight;
+            smartScroll();
           }
           if(j.done){
             gotDone=true;
