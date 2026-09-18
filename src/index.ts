@@ -182,8 +182,8 @@ function appPage() {
     <div class="ctxbar" title="上下文占用"><div class="ctxfill" id="ctxfill"></div></div>
     <form class="form" id="form">
       <select id="model" class="model-select" title="模型">
-        <option value="deepseek-ai/DeepSeek-V3.2">V3.2</option>
-        <option value="deepseek-ai/DeepSeek-R1">R1</option>
+        <option value="deepseek-ai/DeepSeek-V3.2">快速</option>
+        <option value="deepseek-ai/DeepSeek-R1">推理</option>
       </select>
       <textarea id="input" maxlength="${MAX_MESSAGE}" placeholder="输入消息…"></textarea>
       <button class="send" id="sendBtn" type="submit">发送</button>
@@ -263,7 +263,7 @@ function renderMsg(role,content,meta){
   d.dataset.role=role;
   let reasoningHtml='';
   if(meta.reasoning){
-    reasoningHtml='<details class="reasoning"><summary>思维链（DeepSeek-R1）</summary><div class="reasoning-body">'+esc(meta.reasoning)+'</div></details>';
+    reasoningHtml='<details class="reasoning"><summary>思维链</summary><div class="reasoning-body">'+esc(meta.reasoning)+'</div></details>';
   }
   const bits=[];
   if(meta.thinkingMs!=null)bits.push('<span>思考 '+fmtMs(meta.thinkingMs)+'</span>');
@@ -305,7 +305,7 @@ function renderMsg(role,content,meta){
     if(!details){
       details=document.createElement('details');
       details.className='reasoning';
-      details.innerHTML='<summary>思维链（DeepSeek-R1）</summary><div class="reasoning-body"></div>';
+      details.innerHTML='<summary>思维链</summary><div class="reasoning-body"></div>';
       d.insertBefore(details,d.querySelector('.bubble'));
       details.addEventListener('toggle',()=>{userClosedReasoning=!details.open;});
       if(thinking){details.open=true;userClosedReasoning=false;}
@@ -314,7 +314,7 @@ function renderMsg(role,content,meta){
     if(!thinking)details.open=!!details.open;
     details.querySelector('.reasoning-body').textContent=text||'';
     const sum=details.querySelector('summary');
-    if(sum)sum.textContent=thinking?'思维链（思考中…）':'思维链（DeepSeek-R1）';
+    if(sum)sum.textContent=thinking?'思维链（思考中…）':'思维链';
   }};
 }
 
