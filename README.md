@@ -88,7 +88,6 @@ npm run deploy
 | 标题概括 | `Qwen/Qwen3.5-9B` |
 | 上下文压缩 | `Qwen/Qwen3.5-35B-A3B` |
 
-##AI
-100% AI Generated
+## AI
 
-具体可用性以 SiliconFlow 当前模型列表为准。
+100% AI Generated
