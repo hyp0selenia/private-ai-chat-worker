@@ -126,7 +126,7 @@ $('#form').onsubmit=async e=>{
  bubble.innerHTML=md(bubble.textContent);loadChats();
 };
 input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#form').requestSubmit()}};
-loadChats();
+(async()=>{await initSecurity();loadChats();})();
 </script>`;
   return page("Private AI Chat", body, script);
 }
