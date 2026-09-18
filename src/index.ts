@@ -3,10 +3,10 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
 interface Env {
   CHAT_KV: KVNamespace;
+  CHAT_R2: R2Bucket;
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD: string;
   SILICONFLOW_API_KEY: string;
-  WEB_SEARCH_URL?: string;
 }
 
 type Role = "system" | "user" | "assistant";
@@ -35,7 +35,6 @@ type ChatRecord = {
 
 const app = new Hono<{ Bindings: Env }>();
 const SESSION_TTL = 60 * 60 * 24 * 7;
-const CHAT_TTL = 60 * 60 * 24 * 30;
 const MAX_MESSAGE = 12000;
 const MAX_MESSAGES = 80;
 const CONTEXT_SOFT_LIMIT = 24000;
@@ -112,7 +111,7 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .ctxfill.warn{background:linear-gradient(90deg,var(--warn),#f87171)}
 .form{max-width:920px;margin:auto;display:flex;gap:8px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px}
 .form textarea{flex:1;resize:none;background:transparent;border:0;outline:0;min-height:44px;max-height:180px;padding:7px}
-.model-select{align-self:flex-end;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 10px;max-width:150px;height:40px;flex-shrink:0}
+.model-select{align-self:flex-end;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 8px;max-width:72px;width:72px;height:40px;flex-shrink:0;font-size:13px}
 .send{align-self:flex-end;background:#eef2f7;color:#111;border:0;border-radius:8px;padding:9px 14px;height:40px;flex-shrink:0;min-width:64px}
 .send:disabled{opacity:.5;cursor:not-allowed}
 .login{min-height:100dvh;display:grid;place-items:center;padding:20px}
@@ -130,7 +129,7 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
   .scrim.show{display:block}
   .messages{padding:16px 12px}
   .top{padding:8px 10px}
-  .model-select{max-width:120px;font-size:12px;padding:8px 6px}
+  .model-select{max-width:64px;width:64px;font-size:12px;padding:8px 4px}
   .stats{font-size:10px;gap:4px 8px}
 }
 </style></head><body>${body}${scripts}</body></html>`;
@@ -178,8 +177,8 @@ function appPage() {
     <div class="ctxbar" title="上下文占用"><div class="ctxfill" id="ctxfill"></div></div>
     <form class="form" id="form">
       <select id="model" class="model-select" title="模型">
-        <option value="deepseek-ai/DeepSeek-V3.2">DeepSeek-V3.2</option>
-        <option value="deepseek-ai/DeepSeek-R1">DeepSeek-R1</option>
+        <option value="deepseek-ai/DeepSeek-V3.2">V3.2</option>
+        <option value="deepseek-ai/DeepSeek-R1">R1</option>
       </select>
       <textarea id="input" maxlength="${MAX_MESSAGE}" placeholder="输入消息…"></textarea>
       <button class="send" id="sendBtn" type="submit">发送</button>
@@ -609,139 +608,62 @@ async function compressMessages(env: Env, messages: ChatMessage[]): Promise<Chat
   }
 }
 
-async function needSearch(question: string) {
-  return /(最新|今天|近期|现在|目前|当前|实时|搜索|查一下|查下|查询|网上|网页|新闻|价格|天气|比赛|发布|更新|怎么样了|多少钱|202[4-9]|20[3-9]\d|latest|today|news|price|weather|search)/i.test(
-    question
-  );
+function isValidChatId(id: string): boolean {
+  if (!id || typeof id !== "string") return false;
+  const s = id.trim();
+  // UUID 或自定义 id，允许大小写与常见字符
+  return /^[a-zA-Z0-9_-]{8,80}$/.test(s) || /^[a-fA-F0-9-]{10,80}$/.test(s);
 }
 
-async function buildSearchQuery(env: Env, question: string) {
+const chatKey = (id: string) => `chat/admin/${id}.json`;
+const indexKey = () => `chat/admin/index.json`;
+
+async function r2GetJson<T>(env: Env, key: string): Promise<T | null> {
   try {
-    const r = await sf(
-      env,
-      [
-        { role: "system", content: "把用户问题改写成适合网页搜索的简短关键词。只输出搜索词，不要解释。" },
-        { role: "user", content: question },
-      ],
-      MODEL_HELPER,
-      false
-    );
-    const j: any = await r.json();
-    return String(j.choices?.[0]?.message?.content || question).trim().slice(0, 300);
-  } catch {
-    return question.slice(0, 300);
+    const obj = await env.CHAT_R2.get(key);
+    if (!obj) return null;
+    const text = await obj.text();
+    if (!text) return null;
+    return JSON.parse(text) as T;
+  } catch (e) {
+    console.error("r2GetJson failed", key, e);
+    return null;
   }
 }
 
-async function webSearch(env: Env, query: string) {
-  const endpoints = [env.WEB_SEARCH_URL || "https://html.duckduckgo.com/html/", "https://lite.duckduckgo.com/lite/"];
-  for (const base of endpoints) {
-    try {
-      const u = new URL(base);
-      u.searchParams.set("q", query);
-      u.searchParams.set("kl", "cn-zh");
-      const r = await fetch(u.toString(), {
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; PrivateAIChat/1.0; +https://workers.cloudflare.com/)",
-          Accept: "text/html,application/xhtml+xml",
-        },
-        redirect: "follow",
-      });
-      if (!r.ok) continue;
-      const html = await r.text();
-      const results = parseDuckDuckGoResults(html, u.origin);
-      if (results.length) return results;
-    } catch {
-      // next
-    }
-  }
-  return [];
+async function r2PutJson(env: Env, key: string, data: unknown): Promise<void> {
+  await env.CHAT_R2.put(key, JSON.stringify(data), {
+    httpMetadata: { contentType: "application/json; charset=utf-8" },
+  });
 }
 
-function parseDuckDuckGoResults(html: string, origin: string) {
-  const results: { name: string; url: string; snippet: string }[] = [];
-  const seen = new Set<string>();
-  const linkRe = /<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = linkRe.exec(html)) && results.length < 5) {
-    const name = stripHtml(m[2]);
-    const url = unwrapSearchUrl(m[1], origin);
-    const block = html.slice(m.index, Math.min(html.length, m.index + 5000));
-    const sm = block.match(/class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\//i);
-    const snippet = sm ? stripHtml(sm[1]) : "";
-    if (name && url && !seen.has(url)) {
-      seen.add(url);
-      results.push({ name, url, snippet });
-    }
-  }
-  if (results.length) return results;
-  const liteRe = /<a[^>]+class=["'][^"']*result-link[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  while ((m = liteRe.exec(html)) && results.length < 5) {
-    const name = stripHtml(m[2]);
-    const url = unwrapSearchUrl(m[1], origin);
-    const block = html.slice(m.index, Math.min(html.length, m.index + 5000));
-    const sm = block.match(/class=["'][^"']*result-snippet[^"']*["'][^>]*>([\s\S]*?)<\//i);
-    const snippet = sm ? stripHtml(sm[1]) : "";
-    if (name && url && !seen.has(url)) {
-      seen.add(url);
-      results.push({ name, url, snippet });
-    }
-  }
-  return results;
-}
-
-function unwrapSearchUrl(rawUrl: string, origin: string) {
+async function r2Delete(env: Env, key: string): Promise<void> {
   try {
-    const parsed = new URL(rawUrl, origin);
-    const redirected = parsed.searchParams.get("uddg");
-    const url = redirected ? decodeURIComponent(redirected) : parsed.toString();
-    return /^https?:\/\//i.test(url) &&
-      !/^https?:\/\/(?:www\.)?(?:duckduckgo\.com|html\.duckduckgo\.com|lite\.duckduckgo\.com)\//i.test(url)
-      ? url
-      : "";
-  } catch {
-    return "";
+    await env.CHAT_R2.delete(key);
+  } catch (e) {
+    console.error("r2Delete failed", key, e);
   }
 }
 
-function stripHtml(s: string) {
-  return s
-    .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;|&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
+async function loadIndex(env: Env): Promise<{ id: string; title: string; updatedAt: number }[]> {
+  const xs = await r2GetJson<any[]>(env, indexKey());
+  return Array.isArray(xs) ? xs : [];
 }
-
-async function searchContext(env: Env, question: string) {
-  if (!(await needSearch(question))) return "";
-  const q = await buildSearchQuery(env, question);
-  const results = await webSearch(env, q);
-  if (!results.length) return "";
-  return (
-    "\n\n网页搜索结果（仅作为参考）：\n" +
-    results.map((x: any, i: number) => `${i + 1}. ${x.name}\n${x.snippet}\n${x.url}`).join("\n")
-  );
-}
-
-const chatKey = (id: string) => `chat:admin:${id}`;
-const indexKey = () => `chats:admin`;
 
 async function saveIndex(env: Env, id: string, title: string, updatedAt: number) {
-  const raw = await env.CHAT_KV.get(indexKey());
-  const xs: any[] = raw ? JSON.parse(raw) : [];
+  const xs = await loadIndex(env);
   const next = xs.filter(x => x.id !== id);
   next.unshift({ id, title, updatedAt });
-  await env.CHAT_KV.put(indexKey(), JSON.stringify(next.slice(0, 100)), { expirationTtl: CHAT_TTL });
+  await r2PutJson(env, indexKey(), next.slice(0, 200));
+}
+
+async function loadChat(env: Env, id: string): Promise<ChatRecord | null> {
+  return r2GetJson<ChatRecord>(env, chatKey(id));
 }
 
 async function persistChat(env: Env, chat: ChatRecord) {
   chat.updatedAt = Date.now();
-  await env.CHAT_KV.put(chatKey(chat.id), JSON.stringify(chat), { expirationTtl: CHAT_TTL });
+  await r2PutJson(env, chatKey(chat.id), chat);
   await saveIndex(env, chat.id, chat.title, chat.updatedAt);
 }
 
@@ -808,44 +730,48 @@ app.get("/api/security", async c => {
 
 app.get("/api/chats", async c => {
   if (!(await sessionUser(c))) return c.json({ error: "Unauthorized" }, 401);
-  const raw = await c.env.CHAT_KV.get(indexKey());
-  let xs: any[] = raw ? JSON.parse(raw) : [];
+  let xs = await loadIndex(c.env);
   const alive: any[] = [];
   for (const x of xs) {
-    if (await c.env.CHAT_KV.get(chatKey(x.id))) alive.push(x);
+    if (!x?.id || !isValidChatId(x.id)) continue;
+    const obj = await c.env.CHAT_R2.head(chatKey(x.id));
+    if (obj) alive.push({ id: x.id, title: x.title || "New Chat", updatedAt: x.updatedAt || 0 });
   }
   if (alive.length !== xs.length) {
-    await c.env.CHAT_KV.put(indexKey(), JSON.stringify(alive), { expirationTtl: CHAT_TTL });
+    try {
+      await r2PutJson(c.env, indexKey(), alive);
+    } catch (e) {
+      console.error("index prune failed", e);
+    }
   }
   return c.json(alive);
 });
 
 app.get("/api/chats/:id", async c => {
   if (!(await sessionUser(c))) return c.json({ error: "Unauthorized" }, 401);
-  const id = c.req.param("id");
-  if (!/^[a-f0-9-]{10,80}$/.test(id)) return c.json({ error: "Invalid id" }, 400);
-  const x = (await c.env.CHAT_KV.get(chatKey(id), "json")) as ChatRecord | null;
+  const id = decodeURIComponent(c.req.param("id") || "").trim();
+  if (!isValidChatId(id)) return c.json({ error: "Invalid id", id }, 400);
+  const x = await loadChat(c.env, id);
   return x ? c.json(x) : c.json({ error: "Not found" }, 404);
 });
 
 app.delete("/api/chats/:id", async c => {
   if (!(await sessionUser(c))) return c.json({ error: "Unauthorized" }, 401);
   if (!(await checkCsrf(c))) return c.json({ error: "CSRF validation failed" }, 403);
-  const id = c.req.param("id");
-  await c.env.CHAT_KV.delete(chatKey(id));
-  const raw = await c.env.CHAT_KV.get(indexKey());
-  const xs: any[] = raw ? JSON.parse(raw) : [];
-  await c.env.CHAT_KV.put(indexKey(), JSON.stringify(xs.filter(x => x.id !== id)), { expirationTtl: CHAT_TTL });
+  const id = decodeURIComponent(c.req.param("id") || "").trim();
+  if (!isValidChatId(id)) return c.json({ error: "Invalid id" }, 400);
+  await r2Delete(c.env, chatKey(id));
+  const xs = await loadIndex(c.env);
+  await r2PutJson(c.env, indexKey(), xs.filter(x => x.id !== id));
   return c.json({ ok: true });
 });
 
 app.delete("/api/chats", async c => {
   if (!(await sessionUser(c))) return c.json({ error: "Unauthorized" }, 401);
   if (!(await checkCsrf(c))) return c.json({ error: "CSRF validation failed" }, 403);
-  const raw = await c.env.CHAT_KV.get(indexKey());
-  const xs: any[] = raw ? JSON.parse(raw) : [];
-  await Promise.all(xs.map(x => c.env.CHAT_KV.delete(chatKey(x.id))));
-  await c.env.CHAT_KV.delete(indexKey());
+  const xs = await loadIndex(c.env);
+  await Promise.all(xs.map(x => r2Delete(c.env, chatKey(x.id))));
+  await r2Delete(c.env, indexKey());
   return c.json({ ok: true });
 });
 
@@ -857,9 +783,10 @@ app.post("/api/chat", async c => {
   const message = String(b.message || "").trim();
   if (!message || message.length > MAX_MESSAGE) return c.text("Invalid message", 400);
   const model = MODELS.includes(b.model as any) ? (b.model as string) : MODELS[0];
-  const id = b.chatId && /^[a-f0-9-]{10,80}$/.test(b.chatId) ? b.chatId : crypto.randomUUID();
+  const rawChatId = b.chatId != null ? String(b.chatId).trim() : "";
+  const id = isValidChatId(rawChatId) ? rawChatId : crypto.randomUUID();
 
-  let chat = (await c.env.CHAT_KV.get(chatKey(id), "json")) as ChatRecord | null;
+  let chat = await loadChat(c.env, id);
   if (!chat) {
     chat = {
       id,
@@ -901,20 +828,11 @@ app.post("/api/chat", async c => {
     console.error("persist user failed", e);
   }
 
-  const context = await searchContext(c.env, message);
   const upstreamMessages: any[] = chat.messages.map(m => {
     const o: any = { role: m.role, content: m.content };
     if (m.reasoning && model.includes("R1")) o.reasoning_content = m.reasoning;
     return o;
   });
-  if (context) {
-    upstreamMessages.push({
-      role: "system",
-      content:
-        "Use the following web search results when useful. Do not claim you browsed if no results are present." +
-        context,
-    });
-  }
 
   const started = Date.now();
   let r: Response;
