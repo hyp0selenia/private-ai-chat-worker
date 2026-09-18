@@ -47,8 +47,7 @@ const MODEL_CONTEXT: Record<string, number> = {
 };
 const MODEL_TITLE = "Qwen/Qwen3.5-9B";
 const MODEL_HELPER = "Qwen/Qwen3.5-35B-A3B";
-const SYSTEM_PROMPT =
-  "你是一个有帮助、诚实、简洁的私人 AI 助手。用用户使用的语言回答。回答准确、有条理；不确定时明确说明。需要时给出步骤或示例，避免废话。";
+const SYSTEM_PROMPT = "You are a helpful assistant.";
 
 function esc(s: string) {
   return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -81,12 +80,12 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .history{overflow:auto;flex:1;min-height:0}.item{padding:9px 10px;border-radius:8px;display:flex;gap:8px;align-items:center;margin-bottom:3px;white-space:nowrap}
 .item:hover,.item.active{background:var(--panel2)}
 .item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.del{border:0;background:none;color:var(--muted);padding:2px 5px}
-.footer{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;white-space:nowrap}
+.footer{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;white-space:nowrap;gap:8px}
+.footer .del-all{color:#ff6b6b;font-weight:600;border:0;background:none;padding:2px 5px}
+.footer .del-all:hover{color:#ff8787;text-decoration:underline}
 .main{min-width:0;flex:1;display:flex;flex-direction:column;position:relative;z-index:1}
 .top{min-height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:8px 14px}
 .top-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
-.top-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.top select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 8px;max-width:160px}
 .icon-btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 10px;color:var(--muted);position:relative;z-index:40;flex-shrink:0}
 .icon-btn:hover{color:var(--text);border-color:#3a4654}
 .title-wrap{min-width:0;overflow:hidden}
@@ -111,9 +110,10 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .ctxbar{max-width:920px;margin:0 auto 8px;height:5px;background:#1a222b;border-radius:99px;overflow:hidden}
 .ctxfill{height:100%;background:linear-gradient(90deg,var(--ok),var(--accent));transition:width .25s;width:0%}
 .ctxfill.warn{background:linear-gradient(90deg,var(--warn),#f87171)}
-.form{max-width:920px;margin:auto;display:flex;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px}
+.form{max-width:920px;margin:auto;display:flex;gap:8px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px}
 .form textarea{flex:1;resize:none;background:transparent;border:0;outline:0;min-height:44px;max-height:180px;padding:7px}
-.send{align-self:flex-end;background:#eef2f7;color:#111;border:0;border-radius:8px;padding:9px 14px}
+.model-select{align-self:flex-end;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 10px;max-width:150px;height:40px;flex-shrink:0}
+.send{align-self:flex-end;background:#eef2f7;color:#111;border:0;border-radius:8px;padding:9px 14px;height:40px;flex-shrink:0;min-width:64px}
 .send:disabled{opacity:.5;cursor:not-allowed}
 .login{min-height:100dvh;display:grid;place-items:center;padding:20px}
 .card{width:min(380px,100%);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
@@ -130,7 +130,7 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
   .scrim.show{display:block}
   .messages{padding:16px 12px}
   .top{padding:8px 10px}
-  .top select{max-width:130px;font-size:12px}
+  .model-select{max-width:120px;font-size:12px;padding:8px 6px}
   .stats{font-size:10px;gap:4px 8px}
 }
 </style></head><body>${body}${scripts}</body></html>`;
@@ -140,7 +140,7 @@ function loginPage(error = "") {
   return page(
     "Login",
     `<div class="login"><form class="card" method="post" action="/login">
-<h1>Private AI Chat</h1><p style="color:var(--muted)">Admin sign in</p>
+<h1>Chat1017</h1><p style="color:var(--muted)">Admin sign in</p>
 ${error ? `<div class="error">${esc(error)}</div>` : ""}
 <label class="field">Username<input name="username" autocomplete="username" maxlength="128" required></label>
 <label class="field">Password<input type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
@@ -152,11 +152,10 @@ function appPage() {
   const body = `<div class="scrim" id="scrim"></div>
 <div class="shell">
 <aside class="sidebar collapsed" id="sidebar">
-  <div class="brand"><span>Private AI Chat</span><button type="button" class="close-sb" id="closeSidebar" aria-label="关闭">✕</button></div>
+  <div class="brand"><span>Chat1017</span><button type="button" class="close-sb" id="closeSidebar" aria-label="关闭">✕</button></div>
   <button class="new" id="newChat">＋ New Chat</button>
-  <button class="new" id="deleteAll">Delete all chats</button>
   <div class="history" id="history"></div>
-  <div class="footer"><span>Admin</span><button class="del" id="logout">Logout</button></div>
+  <div class="footer"><button class="del del-all" id="deleteAll" type="button">Delete all chats</button><button class="del" id="logout" type="button">Logout</button></div>
 </aside>
 <main class="main">
   <header class="top">
@@ -171,12 +170,6 @@ function appPage() {
         </div>
       </div>
     </div>
-    <div class="top-right">
-      <select id="model" title="模型">
-        <option value="deepseek-ai/DeepSeek-V3.2">DeepSeek-V3.2</option>
-        <option value="deepseek-ai/DeepSeek-R1">DeepSeek-R1</option>
-      </select>
-    </div>
   </header>
   <section class="messages" id="messages">
     <div class="msg"><div class="role">Assistant</div><div class="bubble">你好，有什么可以帮你的？</div></div>
@@ -184,8 +177,12 @@ function appPage() {
   <div class="composer">
     <div class="ctxbar" title="上下文占用"><div class="ctxfill" id="ctxfill"></div></div>
     <form class="form" id="form">
-      <textarea id="input" maxlength="${MAX_MESSAGE}" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"></textarea>
-      <button class="send" id="sendBtn">发送</button>
+      <select id="model" class="model-select" title="模型">
+        <option value="deepseek-ai/DeepSeek-V3.2">DeepSeek-V3.2</option>
+        <option value="deepseek-ai/DeepSeek-R1">DeepSeek-R1</option>
+      </select>
+      <textarea id="input" maxlength="${MAX_MESSAGE}" placeholder="输入消息…"></textarea>
+      <button class="send" id="sendBtn" type="submit">发送</button>
     </form>
   </div>
 </main>
@@ -248,8 +245,8 @@ function renderMsg(role,content,meta){
   }
   const bits=[];
   if(meta.thinkingMs!=null)bits.push('<span>思考 '+fmtMs(meta.thinkingMs)+'</span>');
-  if(meta.totalTokens!=null)bits.push('<span>Token '+fmtTok(meta.totalTokens)+'（入 '+fmtTok(meta.promptTokens)+' / 出 '+fmtTok(meta.completionTokens)+'）</span>');
-  else if(meta.promptTokens!=null||meta.completionTokens!=null)bits.push('<span>Token 入 '+fmtTok(meta.promptTokens)+' / 出 '+fmtTok(meta.completionTokens)+'</span>');
+  if(meta.totalTokens!=null)bits.push('<span>Token '+fmtTok(meta.totalTokens)+'（↓ '+fmtTok(meta.promptTokens)+' / ↑ '+fmtTok(meta.completionTokens)+'）</span>');
+  else if(meta.promptTokens!=null||meta.completionTokens!=null)bits.push('<span>Token ↓ '+fmtTok(meta.promptTokens)+' / ↑ '+fmtTok(meta.completionTokens)+'</span>');
   const metaHtml=bits.length?'<div class="msg-meta">'+bits.join('')+'</div>':'';
   d.innerHTML='<div class="role">'+(role==='user'?'You':'Assistant')+'</div>'+reasoningHtml+'<div class="bubble"></div>'+metaHtml;
   const bubble=d.querySelector('.bubble');
@@ -257,25 +254,35 @@ function renderMsg(role,content,meta){
   else bubble.innerHTML=esc(content||'').replace(/\\n/g,'<br>');
   messagesEl.appendChild(d);
   messagesEl.scrollTop=messagesEl.scrollHeight;
+  let userClosedReasoning=false;
+  const details0=d.querySelector('.reasoning');
+  if(details0){
+    details0.addEventListener('toggle',()=>{userClosedReasoning=!details0.open;});
+  }
   return {root:d,bubble,setMeta(m){
     let el=d.querySelector('.msg-meta');
     if(!el){el=document.createElement('div');el.className='msg-meta';d.appendChild(el);}
     const b=[];
     if(m.thinkingMs!=null)b.push('<span>思考 '+fmtMs(m.thinkingMs)+'</span>');
-    if(m.totalTokens!=null)b.push('<span>Token '+fmtTok(m.totalTokens)+'（入 '+fmtTok(m.promptTokens)+' / 出 '+fmtTok(m.completionTokens)+'）</span>');
+    if(m.totalTokens!=null)b.push('<span>Token '+fmtTok(m.totalTokens)+'（↓ '+fmtTok(m.promptTokens)+' / ↑ '+fmtTok(m.completionTokens)+'）</span>');
+    else if(m.promptTokens!=null||m.completionTokens!=null)b.push('<span>Token ↓ '+fmtTok(m.promptTokens)+' / ↑ '+fmtTok(m.completionTokens)+'</span>');
     el.innerHTML=b.join('');
-  },setReasoning(text,open){
+  },setReasoning(text,thinking){
     let details=d.querySelector('.reasoning');
     if(!details){
       details=document.createElement('details');
       details.className='reasoning';
       details.innerHTML='<summary>思维链（DeepSeek-R1）</summary><div class="reasoning-body"></div>';
       d.insertBefore(details,d.querySelector('.bubble'));
+      details.addEventListener('toggle',()=>{userClosedReasoning=!details.open;});
+      if(thinking){details.open=true;userClosedReasoning=false;}
     }
-    if(open)details.open=true;
+    // 思考过程中允许用户手动关闭；仅在用户未主动关闭时保持展开
+    if(thinking && !userClosedReasoning)details.open=true;
+    if(!thinking)details.open=!!details.open;
     details.querySelector('.reasoning-body').textContent=text||'';
     const sum=details.querySelector('summary');
-    if(sum)sum.textContent=open?'思维链（思考中…）':'思维链（DeepSeek-R1）';
+    if(sum)sum.textContent=thinking?'思维链（思考中…）':'思维链（DeepSeek-R1）';
   }};
 }
 
@@ -314,7 +321,8 @@ async function openChat(id){
   const c=await r.json();
   currentId=c.id;
   currentModel=c.model||currentModel;
-  $('#model').value=currentModel;
+  const modelEl=$('#model');
+  if(modelEl)modelEl.value=currentModel;
   $('#title').textContent=c.title||'New Chat';
   messagesEl.innerHTML='';
   sessionMeta={
@@ -324,15 +332,20 @@ async function openChat(id){
     totalTokens:c.totalTokens||0,
     ctxTokens:0
   };
-  (c.messages||[]).filter(x=>x.role!=='system').forEach(x=>{
-    renderMsg(x.role,x.content,{
-      reasoning:x.reasoning,
-      thinkingMs:x.thinkingMs,
-      promptTokens:x.promptTokens,
-      completionTokens:x.completionTokens,
-      totalTokens:x.totalTokens
+  const msgs=(c.messages||[]).filter(x=>x&&x.role&&x.role!=='system');
+  if(!msgs.length){
+    messagesEl.innerHTML='<div class="msg"><div class="role">Assistant</div><div class="bubble">你好，有什么可以帮你的？</div></div>';
+  }else{
+    msgs.forEach(x=>{
+      renderMsg(x.role,x.content||'',{
+        reasoning:x.reasoning||'',
+        thinkingMs:x.thinkingMs,
+        promptTokens:x.promptTokens,
+        completionTokens:x.completionTokens,
+        totalTokens:x.totalTokens
+      });
     });
-  });
+  }
   sessionMeta.ctxTokens=(c.messages||[]).reduce((n,m)=>n+Math.ceil(((m.content||'')+(m.reasoning||'')).length/2)+4,0);
   updateStats();
   loadChats();
@@ -364,16 +377,21 @@ $('#form').onsubmit=async e=>{
   if(!text||sendBtn.disabled)return;
   input.value='';
   sendBtn.disabled=true;
+  currentModel=$('#model').value||currentModel;
   renderMsg('user',text);
   const ui=renderMsg('assistant','');
   const t0=performance.now();
   let reasoning='';
   let content='';
+  let gotDone=false;
   try{
     const res=await postJSON('/api/chat',{chatId:currentId,model:currentModel,message:text});
     if(!res.ok){
       ui.bubble.textContent=await res.text();
-      sendBtn.disabled=false;
+      return;
+    }
+    if(!res.body){
+      ui.bubble.textContent='无响应流';
       return;
     }
     const reader=res.body.getReader(),dec=new TextDecoder();
@@ -385,8 +403,9 @@ $('#form').onsubmit=async e=>{
       const parts=buf.split('\\n\\n');
       buf=parts.pop()||'';
       for(const p of parts){
-        if(!p.startsWith('data:'))continue;
-        const data=p.slice(5).trim();
+        const line=p.trim();
+        if(!line.startsWith('data:'))continue;
+        const data=line.slice(5).trim();
         if(data==='[DONE]')continue;
         try{
           const j=JSON.parse(data);
@@ -403,6 +422,7 @@ $('#form').onsubmit=async e=>{
             messagesEl.scrollTop=messagesEl.scrollHeight;
           }
           if(j.done){
+            gotDone=true;
             if(j.title)$('#title').textContent=j.title;
             if(j.sessionTotalThinkingMs!=null)sessionMeta.totalThinkingMs=j.sessionTotalThinkingMs;
             if(j.sessionTotalTokens!=null)sessionMeta.totalTokens=j.sessionTotalTokens;
@@ -422,24 +442,48 @@ $('#form').onsubmit=async e=>{
         }catch{}
       }
     }
+    // 处理残留缓冲
+    if(buf.trim()){
+      const line=buf.trim();
+      if(line.startsWith('data:')){
+        const data=line.slice(5).trim();
+        if(data&&data!=='[DONE]'){
+          try{
+            const j=JSON.parse(data);
+            if(j.delta){content+=j.delta;ui.bubble.textContent=content;}
+            if(j.reasoning_delta){reasoning+=j.reasoning_delta;ui.setReasoning(reasoning,true);}
+            if(j.done){
+              gotDone=true;
+              if(j.title)$('#title').textContent=j.title;
+              if(j.sessionTotalThinkingMs!=null)sessionMeta.totalThinkingMs=j.sessionTotalThinkingMs;
+              if(j.sessionTotalTokens!=null)sessionMeta.totalTokens=j.sessionTotalTokens;
+              if(j.ctxTokens!=null)sessionMeta.ctxTokens=j.ctxTokens;
+              ui.setMeta({thinkingMs:j.thinkingMs!=null?j.thinkingMs:Math.round(performance.now()-t0),promptTokens:j.promptTokens,completionTokens:j.completionTokens,totalTokens:j.totalTokens});
+              if(reasoning)ui.setReasoning(reasoning,false);
+              updateStats();
+            }
+          }catch{}
+        }
+      }
+    }
     if(content)ui.bubble.innerHTML=md(content);
     else if(!ui.bubble.textContent)ui.bubble.textContent='（空回复）';
-    // 若流结束仍无 done 元数据，用本地时间补全本轮思考
-    if(!ui.root.querySelector('.msg-meta')){
+    if(!gotDone && !ui.root.querySelector('.msg-meta')){
       ui.setMeta({thinkingMs:Math.round(performance.now()-t0)});
     }
-    loadChats();
+    if(reasoning)ui.setReasoning(reasoning,false);
+    try{await loadChats();}catch{}
   }catch(err){
     ui.bubble.textContent='请求失败：'+(err&&err.message?err.message:String(err));
   }finally{
     sendBtn.disabled=false;
-    input.focus();
+    try{input.focus();}catch{}
   }
 };
 input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#form').requestSubmit();}};
 (async()=>{await initSecurity();loadChats();updateStats();})();
 </script>`;
-  return page("Private AI Chat", body, script);
+  return page("Chat1017", body, script);
 }
 
 async function sha256(input: string) {
@@ -486,18 +530,21 @@ async function sf(env: Env, messages: any[], model: string, stream: boolean, ext
 }
 
 async function generateTitle(env: Env, messages: ChatMessage[]) {
+  const userMsgs = messages.filter(x => x.role === "user");
+  const fallback = (userMsgs[0]?.content || "新对话").replace(/\s+/g, " ").slice(0, 16);
   try {
     const snippet = messages
       .filter(x => x.role !== "system")
-      .slice(0, 4)
-      .map(x => `${x.role}: ${(x.content || "").slice(0, 400)}`)
+      .slice(0, 6)
+      .map(x => `${x.role}: ${(x.content || "").slice(0, 300)}`)
       .join("\n");
     const r = await sf(
       env,
       [
         {
           role: "system",
-          content: "根据对话生成一个简短中文标题。只输出标题本身，不要引号、标点装饰或解释，不超过16个字。",
+          content:
+            "根据对话生成一个简短中文标题。只输出标题本身，不要引号、标点装饰、解释或换行，不超过16个字。",
         },
         { role: "user", content: snippet || "新对话" },
       ],
@@ -506,25 +553,36 @@ async function generateTitle(env: Env, messages: ChatMessage[]) {
     );
     const j: any = await r.json();
     let title = String(j.choices?.[0]?.message?.content || "").trim();
-    title = title.replace(/^["'「『]|["'」』]$/g, "").replace(/\n/g, " ").slice(0, 30);
-    return title || "新对话";
+    // 去掉思维标签、引号、多余空白
+    title = title
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/^["'「『]|["'」』]$/g, "")
+      .replace(/\n/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 30);
+    return title || fallback;
   } catch (e) {
     console.error("generateTitle failed", e);
-    return "新对话";
+    return fallback;
   }
 }
 
 async function compressMessages(env: Env, messages: ChatMessage[]): Promise<ChatMessage[]> {
-  const system = messages.filter(m => m.role === "system");
+  const system = messages.filter(m => m.role === "system" && !m.content.startsWith("【历史对话摘要】"));
+  const oldSummaries = messages.filter(m => m.role === "system" && m.content.startsWith("【历史对话摘要】"));
   const rest = messages.filter(m => m.role !== "system");
-  if (rest.length <= 12) return messages;
+  if (rest.length <= 8) return messages;
 
-  const keepTail = rest.slice(-10);
-  const toSummarize = rest.slice(0, -10);
-  const text = toSummarize
-    .map(m => `${m.role}: ${m.content}${m.reasoning ? "\n[reasoning]" + m.reasoning.slice(0, 400) : ""}`)
-    .join("\n")
-    .slice(0, 12000);
+  const keepTail = rest.slice(-8);
+  const toSummarize = rest.slice(0, -8);
+  const prevSummary = oldSummaries.map(m => m.content.replace(/^【历史对话摘要】\n?/, "")).join("\n");
+  const text =
+    (prevSummary ? "【此前摘要】\n" + prevSummary.slice(0, 1500) + "\n\n【待压缩对话】\n" : "") +
+    toSummarize
+      .map(m => `${m.role}: ${m.content}${m.reasoning ? "\n[reasoning]" + m.reasoning.slice(0, 300) : ""}`)
+      .join("\n")
+      .slice(0, 14000);
 
   try {
     const r = await sf(
@@ -541,8 +599,9 @@ async function compressMessages(env: Env, messages: ChatMessage[]): Promise<Chat
       false
     );
     const j: any = await r.json();
-    const summary = String(j.choices?.[0]?.message?.content || "").trim().slice(0, 2000);
-    if (!summary) return messages;
+    let summary = String(j.choices?.[0]?.message?.content || "").trim();
+    summary = summary.replace(/<think>[\s\S]*?<\/think>/gi, "").trim().slice(0, 2500);
+    if (!summary) return [...system, ...rest.slice(-MAX_MESSAGES)];
     return [...system, { role: "system", content: "【历史对话摘要】\n" + summary }, ...keepTail];
   } catch (e) {
     console.error("compress failed", e);
@@ -551,7 +610,7 @@ async function compressMessages(env: Env, messages: ChatMessage[]): Promise<Chat
 }
 
 async function needSearch(question: string) {
-  return /\b(最新|今天|近期|现在|新闻|价格|天气|比赛|发布|更新|2026|latest|today|news|price|weather)\b/i.test(
+  return /(最新|今天|近期|现在|目前|当前|实时|搜索|查一下|查下|查询|网上|网页|新闻|价格|天气|比赛|发布|更新|怎么样了|多少钱|202[4-9]|20[3-9]\d|latest|today|news|price|weather|search)/i.test(
     question
   );
 }
@@ -824,13 +883,14 @@ app.post("/api/chat", async c => {
   chat.messages.push({ role: "user", content: message });
 
   let est = messagesTokenEstimate(chat.messages);
-  if (est > CONTEXT_SOFT_LIMIT || chat.messages.length > MAX_MESSAGES) {
+  const nonSystemCount = chat.messages.filter(m => m.role !== "system").length;
+  if (est > CONTEXT_SOFT_LIMIT || nonSystemCount > 16 || chat.messages.length > MAX_MESSAGES) {
     chat.messages = await compressMessages(c.env, chat.messages);
     est = messagesTokenEstimate(chat.messages);
   }
   if (est > CONTEXT_HARD_LIMIT) {
     const system = chat.messages.filter(m => m.role === "system").slice(0, 2);
-    const rest = chat.messages.filter(m => m.role !== "system").slice(-20);
+    const rest = chat.messages.filter(m => m.role !== "system").slice(-16);
     chat.messages = [...system, ...rest];
   }
 
@@ -960,14 +1020,29 @@ app.post("/api/chat", async c => {
             try {
               const j: any = JSON.parse(data);
               if (j.usage) usage = j.usage;
-              const delta = j.choices?.[0]?.delta || {};
-              if (delta.reasoning_content) {
-                reasoning += delta.reasoning_content;
-                send({ reasoning_delta: delta.reasoning_content, chatId: id });
+              const choice = j.choices?.[0] || {};
+              const delta = choice.delta || {};
+              const rc =
+                delta.reasoning_content ||
+                delta.reasoning ||
+                choice.delta?.reasoning_content ||
+                "";
+              if (rc) {
+                reasoning += rc;
+                send({ reasoning_delta: rc, chatId: id });
               }
-              if (delta.content) {
-                assistant += delta.content;
-                send({ delta: delta.content, chatId: id });
+              const dc = delta.content || "";
+              if (dc) {
+                assistant += dc;
+                send({ delta: dc, chatId: id });
+              }
+              // 部分接口在结束 chunk 给出完整 message
+              const fullMsg = choice.message;
+              if (fullMsg) {
+                if (fullMsg.content && !assistant) assistant = String(fullMsg.content);
+                if ((fullMsg.reasoning_content || fullMsg.reasoning) && !reasoning) {
+                  reasoning = String(fullMsg.reasoning_content || fullMsg.reasoning);
+                }
               }
             } catch {
               // ignore
