@@ -3,6 +3,5 @@ node_modules/
 .dev.vars
 .env
 .env.*
-!.env.example
 dist/
 .DS_Store
