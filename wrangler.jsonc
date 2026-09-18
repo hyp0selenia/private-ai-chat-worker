@@ -3,6 +3,7 @@
   "name": "private-ai-chat-worker",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-18",
+  "keep_vars": true,
   "kv_namespaces": [
     {
       "binding": "CHAT_KV",
