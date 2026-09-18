@@ -13,8 +13,7 @@
 - **上下文自动压缩**（超过软上限时用小模型摘要历史）
 - **DeepSeek-R1 思维链（reasoning_content）可展开查看**
 - 聊天历史、删除单条、删除全部
-- **KV 保存聊天记录**（默认约 30 天过期；用户消息先落盘，流结束后再保存完整回复，降低丢失风险）
-- 自动网页搜索（DuckDuckGo HTML / Lite 免费搜索，无需 API Key）
+- **R2 保存聊天记录**（会话/限流仍用 KV；用户消息先落盘，流结束后再保存完整回复）
 - Cloudflare GitHub 集成可自动部署
 
 ## 1. 项目是什么
@@ -27,23 +26,31 @@ Browser → Worker → SiliconFlow
 
 ## 2. Cloudflare 配置
 
-### 2.1 创建 KV
+### 2.1 创建 KV（会话与登录限流）
 
 ```bash
 npx wrangler kv namespace create CHAT_KV
 ```
 
-把输出的 namespace id 填入 `wrangler.jsonc`：
+把输出的 namespace id 填入 `wrangler.jsonc` 的 `kv_namespaces`。
+
+### 2.2 创建 R2（聊天记录）
+
+```bash
+npx wrangler r2 bucket create private-ai-chat
+```
+
+在 `wrangler.jsonc` 中配置：
 
 ```jsonc
-"kv_namespaces": [
-  { "binding": "CHAT_KV", "id": "YOUR_KV_ID" }
+"r2_buckets": [
+  { "binding": "CHAT_R2", "bucket_name": "private-ai-chat" }
 ]
 ```
 
-> 聊天记录保存在 KV。若你希望更长保留或大体积历史，可自行扩展为 R2（当前版本已强化 KV 写入时机与 TTL）。
+> 聊天正文与会话索引保存在 R2；KV 仅用于 session / 登录限流。
 
-### 2.2 设置 Secrets（只需一次，之后构建会自动保留）
+### 2.3 设置 Secrets（只需一次，之后构建会自动保留）
 
 ```bash
 npx wrangler secret put ADMIN_USERNAME
@@ -61,8 +68,6 @@ Workers & Pages → 你的 Worker → Settings → Variables and Secrets → Add
 
 Secrets 保存在 Cloudflare 侧，**不会进入 Git 仓库**，后续每次部署/构建都会自动带上，无需重新输入。
 
-网页搜索默认无需 Secret。程序会优先使用 DuckDuckGo HTML，失败后自动尝试 DuckDuckGo Lite；如需更换入口，可额外设置 `WEB_SEARCH_URL`。
-
 ## 3. 环境变量说明
 
 | 变量 | 类型 | 说明 |
@@ -70,7 +75,6 @@ Secrets 保存在 Cloudflare 侧，**不会进入 Git 仓库**，后续每次部
 | `ADMIN_USERNAME` | Secret | 登录用户名，必须 |
 | `ADMIN_PASSWORD` | Secret | 登录密码，必须 |
 | `SILICONFLOW_API_KEY` | Secret | SiliconFlow API Key，必须 |
-| `WEB_SEARCH_URL` | 可选 | 默认 `https://html.duckduckgo.com/html/` |
 
 ## 4. 本地运行
 

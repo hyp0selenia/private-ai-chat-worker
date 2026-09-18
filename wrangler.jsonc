@@ -9,5 +9,11 @@
       "binding": "CHAT_KV",
       "id": "15bcf432051243bdacbda374a09cf040"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "CHAT_R2",
+      "bucket_name": "private-ai-chat"
+    }
   ]
 }
