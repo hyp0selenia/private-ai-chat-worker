@@ -6,6 +6,8 @@ interface Env {
   CHAT_R2: R2Bucket;
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD: string;
+  USER_USERNAME: string;
+  USER_PASSWORD: string;
   SILICONFLOW_API_KEY: string;
 }
 
@@ -209,7 +211,7 @@ const $=s=>document.querySelector(s);
 const historyEl=$('#history'), messagesEl=$('#messages'), input=$('#input'), sendBtn=$('#sendBtn');
 const sidebar=$('#sidebar'), scrim=$('#scrim');
 const MODEL_CTX={"deepseek-ai/DeepSeek-V3.2":128000,"deepseek-ai/DeepSeek-R1":163840};
-let currentId=null, currentModel='deepseek-ai/DeepSeek-V3.2', csrfToken='';
+let currentId=null, currentModel='deepseek-ai/DeepSeek-V3.2', csrfToken='', userRole='user';
 let sessionMeta={totalThinkingMs:0,totalPromptTokens:0,totalCompletionTokens:0,totalTokens:0,ctxTokens:0};
 let abortCtrl=null;
 let isStreaming=false;
@@ -393,7 +395,15 @@ async function truncateAfterAndResend(msgEl,newText){
 
 async function initSecurity(){
   const r=await fetch('/api/security');
-  if(r.ok){const j=await r.json();csrfToken=j.csrf;}
+  if(r.ok){
+    const j=await r.json();
+    csrfToken=j.csrf;
+    userRole=j.role||'user';
+    if(userRole!=='admin'){
+      const delAll=$('#deleteAll');
+      if(delAll)delAll.style.display='none';
+    }
+  }
 }
 async function postJSON(url,body,signal){
   return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body),signal});
@@ -406,17 +416,20 @@ async function loadChats(){
   if(!r.ok)return;
   const xs=await r.json();
   historyEl.innerHTML='';
+  const canDelete=userRole==='admin';
   xs.forEach(c=>{
     const d=document.createElement('div');
     d.className='item'+(c.id===currentId?' active':'');
-    d.innerHTML='<span>'+esc(c.title||'New Chat')+'</span><button class="del" title="删除">×</button>';
+    d.innerHTML='<span>'+esc(c.title||'New Chat')+'</span>'+(canDelete?'<button class="del" title="删除">×</button>':'');
     d.querySelector('span').onclick=()=>{openChat(c.id);closeSidebar();};
-    d.querySelector('.del').onclick=async e=>{
-      e.stopPropagation();
-      await deleteReq('/api/chats/'+encodeURIComponent(c.id));
-      if(c.id===currentId)newChat();
-      loadChats();
-    };
+    if(canDelete){
+      d.querySelector('.del').onclick=async e=>{
+        e.stopPropagation();
+        await deleteReq('/api/chats/'+encodeURIComponent(c.id));
+        if(c.id===currentId)newChat();
+        loadChats();
+      };
+    }
     historyEl.appendChild(d);
   });
 }
@@ -469,6 +482,7 @@ function newChat(){
 $('#newChat').onclick=newChat;
 $('#model').onchange=e=>{currentModel=e.target.value;updateStats();};
 $('#deleteAll').onclick=async()=>{
+  if(userRole!=='admin')return;
   if(!confirm('确定删除全部聊天记录？'))return;
   await deleteReq('/api/chats');
   newChat();
@@ -627,10 +641,19 @@ async function sha256(input: string) {
   return [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, "0")).join("");
 }
 
-async function sessionUser(c: any) {
+/** Returns role ("admin" | "user") or null if not logged in */
+async function sessionUser(c: any): Promise<"admin" | "user" | null> {
   const token = getCookie(c, "session");
-  if (!token) return false;
-  return !!(await c.env.CHAT_KV.get(`session:${await sha256(token)}`));
+  if (!token) return null;
+  const raw = await c.env.CHAT_KV.get(`session:${await sha256(token)}`);
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    if (data.user === "admin" || data.user === "user") return data.user;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function rateLimited(env: Env, ip: string) {
@@ -810,10 +833,13 @@ app.post("/login", async c => {
   const form = await c.req.parseBody();
   const u = String(form.username || "");
   const p = String(form.password || "");
-  if (u !== c.env.ADMIN_USERNAME || p !== c.env.ADMIN_PASSWORD) return c.html(loginPage("Invalid credentials."), 401);
+  let role: "admin" | "user" | null = null;
+  if (u === c.env.ADMIN_USERNAME && p === c.env.ADMIN_PASSWORD) role = "admin";
+  else if (u === c.env.USER_USERNAME && p === c.env.USER_PASSWORD) role = "user";
+  if (!role) return c.html(loginPage("Invalid credentials."), 401);
   const token = crypto.randomUUID() + crypto.randomUUID();
   const csrf = crypto.randomUUID() + crypto.randomUUID();
-  await c.env.CHAT_KV.put(`session:${await sha256(token)}`, JSON.stringify({ user: "admin", csrf }), {
+  await c.env.CHAT_KV.put(`session:${await sha256(token)}`, JSON.stringify({ user: role, csrf }), {
     expirationTtl: SESSION_TTL,
   });
   setCookie(c, "session", token, {
@@ -857,7 +883,8 @@ app.get("/api/security", async c => {
   const raw = await c.env.CHAT_KV.get(`session:${await sha256(token)}`);
   if (!raw) return c.json({ error: "Unauthorized" }, 401);
   try {
-    return c.json({ csrf: JSON.parse(raw).csrf });
+    const data = JSON.parse(raw);
+    return c.json({ csrf: data.csrf, role: data.user === "admin" ? "admin" : "user" });
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
   }
@@ -891,7 +918,9 @@ app.get("/api/chats/:id", async c => {
 });
 
 app.delete("/api/chats/:id", async c => {
-  if (!(await sessionUser(c))) return c.json({ error: "Unauthorized" }, 401);
+  const role = await sessionUser(c);
+  if (!role) return c.json({ error: "Unauthorized" }, 401);
+  if (role !== "admin") return c.json({ error: "Forbidden: only admin can delete chats" }, 403);
   if (!(await checkCsrf(c))) return c.json({ error: "CSRF validation failed" }, 403);
   const id = decodeURIComponent(c.req.param("id") || "").trim();
   if (!isValidChatId(id)) return c.json({ error: "Invalid id" }, 400);
@@ -902,7 +931,9 @@ app.delete("/api/chats/:id", async c => {
 });
 
 app.delete("/api/chats", async c => {
-  if (!(await sessionUser(c))) return c.json({ error: "Unauthorized" }, 401);
+  const role = await sessionUser(c);
+  if (!role) return c.json({ error: "Unauthorized" }, 401);
+  if (role !== "admin") return c.json({ error: "Forbidden: only admin can delete chats" }, 403);
   if (!(await checkCsrf(c))) return c.json({ error: "CSRF validation failed" }, 403);
   const xs = await loadIndex(c.env);
   await Promise.all(xs.map(x => r2Delete(c.env, chatKey(x.id))));
