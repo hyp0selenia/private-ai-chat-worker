@@ -1,19 +1,20 @@
 # Private AI Chat
 
-部署在 Cloudflare Workers 上的单账号私人 AI 聊天。
+部署在 Cloudflare Workers 上的私人 AI 聊天。
 
 浏览器只与 Worker 通信，API Key 不暴露给前端。
 
 ## 功能
 
-- 单 admin 账号登录
+- admin / user 双账号登录（共用同一份聊天记录）
+- admin 可删除单条 / 全部聊天；user 无删除权限
 - 多轮对话、Markdown、代码高亮、流式输出
 - 侧边栏收起 / 展开
 - 每句思考时间与会话累计
 - Token 消耗统计（单句 + 会话）
 - 上下文占用进度条与自动压缩
 - 推理模型思维链可展开查看
-- 聊天历史保存（R2）、删除单条 / 全部
+- 聊天历史保存（R2）
 
 ## 配置
 
@@ -44,6 +45,8 @@ npx wrangler r2 bucket create private-ai-chat
 ```bash
 npx wrangler secret put ADMIN_USERNAME
 npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put USER_USERNAME
+npx wrangler secret put USER_PASSWORD
 npx wrangler secret put SILICONFLOW_API_KEY
 ```
 
@@ -51,8 +54,10 @@ npx wrangler secret put SILICONFLOW_API_KEY
 
 | 变量 | 说明 |
 |------|------|
-| `ADMIN_USERNAME` | 登录用户名 |
-| `ADMIN_PASSWORD` | 登录密码 |
+| `ADMIN_USERNAME` | admin 登录用户名 |
+| `ADMIN_PASSWORD` | admin 登录密码 |
+| `USER_USERNAME` | user 登录用户名 |
+| `USER_PASSWORD` | user 登录密码 |
 | `SILICONFLOW_API_KEY` | SiliconFlow API Key |
 
 Secrets 保存在 Cloudflare 侧，不会进入仓库，后续部署自动保留。
@@ -64,6 +69,8 @@ npm install
 cat > .dev.vars << 'EOF'
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=你的本地密码
+USER_USERNAME=user
+USER_PASSWORD=你的本地密码
 SILICONFLOW_API_KEY=sk-xxxxxxxx
 EOF
 npm run dev
